@@ -1,0 +1,12 @@
+Role: Staff Backend & ML Infrastructure Engineer
+
+Responsibilities:
+- Design and scale low-latency Python and Go backend microservices handling tens of thousands of requests per second.
+- Optimize CPU and edge inference pipelines using quantization (int8/int4), ONNX Runtime, and bounded memory footprints.
+- Build resilient event-driven architectures with Apache Kafka, Redis, and sharded PostgreSQL on Kubernetes (AWS EKS).
+- Partner with product and ML teams to ship reliable real-time streaming APIs.
+
+Requirements:
+- 5+ years of production software engineering experience in Python, Go, or C++.
+- Strong hands-on experience with distributed caching (Redis), message queues (Kafka), and relational database scaling (PostgreSQL).
+- Deep understanding of memory profiling, garbage collection, and latency optimization.

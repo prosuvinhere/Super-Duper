@@ -1,0 +1,21 @@
+# Secrets & Environment Variables (NEVER commit real API keys)
+.env
+gemini_key.txt
+
+# Python Virtual Environments & Caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temp OCR captures
+copilot_ocr_*.png

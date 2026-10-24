@@ -1,0 +1,29 @@
+ALEX RIVERA
+Senior Backend & Distributed Systems Engineer
+San Francisco, CA | alex.rivera@example.com | github.com/alexrivera
+
+SUMMARY
+Backend engineer with 6+ years of experience designing low-latency distributed systems, high-throughput event pipelines, and production ML inference services in Python, Go, and C++. Proven track record of reducing cloud infrastructure costs by 42% and scaling real-time APIs to 85,000 requests per second (RPS) with p99 latency under 18ms.
+
+EXPERIENCE
+Senior Software Engineer — StreamScale Technologies (2023 - Present)
+- Architected a real-time payment fraud detection pipeline using Python, FastAPI, Apache Kafka, and Redis Cluster handling 85,000 RPS at 14ms p99 latency.
+- Optimized ONNX Runtime CPU int8 inference microservices on Kubernetes, cutting memory consumption per pod from 3.4 GB down to 480 MB and saving $180K annually.
+- Led migration from monolithic PostgreSQL database to sharded PostgreSQL + PgBouncer, eliminating connection pool exhaustion during Black Friday traffic spikes (10x baseline load).
+
+Software Engineer II — CloudPulse Analytics (2020 - 2023)
+- Built an asynchronous log ingestion and full-text search service in Go and Python using BM25 ranking and inverted indices, indexing 1.2 TB of telemetry daily.
+- Designed automated CI/CD canary deployment workflows with GitHub Actions, Docker, and Terraform on AWS EKS, reducing deployment rollback time from 25 minutes to under 45 seconds.
+- Mentored 4 junior engineers and conducted 60+ technical system design and coding interviews.
+
+PROJECTS
+Local Edge AI Copilot
+- Engineered a zero-VLM desktop assistant combining faster-whisper int8 CPU voice activity detection, RapidOCR, and quantized 3B SLMs via Ollama to run smoothly within an 8 GB unified memory budget.
+
+EDUCATION
+B.S. in Computer Science — University of California, Berkeley (2016 - 2020)
+
+SKILLS
+Languages: Python, Go, C++, SQL, TypeScript, Bash
+Infrastructure & Data: Kubernetes, Docker, AWS (EKS, RDS, S3), Kafka, Redis, PostgreSQL, Linux
+AI & ML Systems: ONNX Runtime, faster-whisper, Ollama, Quantization (int8/int4), BM25 RAG

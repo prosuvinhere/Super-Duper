@@ -1,0 +1,233 @@
+# SQL Reference Q&A Bank (PostgreSQL / MySQL)
+# Add your own sample SQL questions, schemas, and answers below separated by "===" on its own line.
+# The copilot automatically indexes every block via BM25 (<2ms) and feeds the closest
+# solved SQL queries to the LLM when solving screen or clipboard SQL questions.
+
+===
+QUESTION: Combine Two Tables (LEFT JOIN Preserving Unmatched Rows)
+Table: Person (personId int, lastName varchar, firstName varchar)
+Table: Address (addressId int, personId int, city varchar, state varchar)
+Write a solution to report the first name, last name, city, and state of each person in the Person table. If the address of a personId is not present in the Address table, report null instead.
+APPROACH: Use LEFT JOIN from Person to Address on personId so people without an address still appear with NULL city and state.
+```sql
+SELECT
+    p.firstName,
+    p.lastName,
+    a.city,
+    a.state
+FROM Person p
+LEFT JOIN Address a
+    ON p.personId = a.personId;
+```
+Edge Cases: LEFT JOIN guarantees NULL for missing addresses instead of dropping rows.
+===
+QUESTION: Second Highest Salary & Nth Highest Salary (Handling Ties and Returning NULL When Missing)
+Table: Employee (id int, salary int)
+Write a solution to find the second highest distinct salary from the Employee table. If there is no second highest salary, return null.
+APPROACH: Use DENSE_RANK() OVER (ORDER BY salary DESC) to handle duplicate top salaries, and wrap in MAX(salary) so an empty result returns NULL.
+```sql
+WITH RankedSalaries AS (
+    SELECT
+        salary,
+        DENSE_RANK() OVER (ORDER BY salary DESC) AS rnk
+    FROM Employee
+)
+SELECT MAX(salary) AS SecondHighestSalary
+FROM RankedSalaries
+WHERE rnk = 2;
+```
+Edge Cases: DENSE_RANK handles duplicate salaries; MAX(salary) returns NULL when fewer than 2 distinct salaries exist.
+===
+QUESTION: Department Highest Salary & Department Top Three Salaries (Window Function Partition By Department)
+Table: Employee (id int, name varchar, salary int, departmentId int)
+Table: Department (id int, name varchar)
+Find the employees who are high earners (top 3 unique salaries) in each of the departments.
+APPROACH: Rank salaries per department using DENSE_RANK() OVER (PARTITION BY departmentId ORDER BY salary DESC) and filter rnk <= 3.
+```sql
+WITH Ranked AS (
+    SELECT
+        d.name AS Department,
+        e.name AS Employee,
+        e.salary AS Salary,
+        DENSE_RANK() OVER (PARTITION BY e.departmentId ORDER BY e.salary DESC) AS rnk
+    FROM Employee e
+    INNER JOIN Department d
+        ON e.departmentId = d.id
+)
+SELECT
+    Department,
+    Employee,
+    Salary
+FROM Ranked
+WHERE rnk <= 3;
+```
+Edge Cases: DENSE_RANK includes all tied employees in the top 3 unique salary tiers per department.
+===
+QUESTION: Employees Earning More Than Their Managers (Self JOIN)
+Table: Employee (id int, name varchar, salary int, managerId int)
+Write a solution to find the employees who earn more than their managers.
+APPROACH: Self-join Employee e with Employee m on e.managerId = m.id and filter e.salary > m.salary.
+```sql
+SELECT
+    e.name AS Employee
+FROM Employee e
+INNER JOIN Employee m
+    ON e.managerId = m.id
+WHERE e.salary > m.salary;
+```
+Edge Cases: INNER JOIN automatically excludes top-level managers whose managerId IS NULL.
+===
+QUESTION: Duplicate Emails & Classes With at Least 5 Students (GROUP BY and HAVING)
+Table: Person (id int, email varchar)
+Write a solution to report all the duplicate emails.
+APPROACH: Group by email and filter groups with HAVING COUNT(*) > 1.
+```sql
+SELECT
+    email AS Email
+FROM Person
+GROUP BY email
+HAVING COUNT(*) > 1;
+```
+Edge Cases: Aggregate conditions must go in HAVING, never WHERE.
+===
+QUESTION: Customers Who Never Order / Find Missing Rows (Anti-Join with LEFT JOIN IS NULL)
+Table: Customers (id int, name varchar)
+Table: Orders (id int, customerId int)
+Write a solution to find all customers who never order anything.
+APPROACH: LEFT JOIN Customers to Orders and filter WHERE o.id IS NULL (safer than NOT IN when NULLs exist).
+```sql
+SELECT
+    c.name AS Customers
+FROM Customers c
+LEFT JOIN Orders o
+    ON c.id = o.customerId
+WHERE o.id IS NULL;
+```
+Edge Cases: Avoids NOT IN pitfalls when foreign keys contain NULL values.
+===
+QUESTION: Rising Temperature / Compare With Previous Calendar Day (Date Self-Join)
+Table: Weather (id int, recordDate date, temperature int)
+Find all dates' id with higher temperatures compared to its previous dates (yesterday).
+APPROACH: Self-join Weather w1 and w2 where w1.recordDate is exactly 1 day after w2.recordDate and w1.temperature > w2.temperature.
+```sql
+SELECT
+    w1.id
+FROM Weather w1
+INNER JOIN Weather w2
+    ON DATEDIFF(w1.recordDate, w2.recordDate) = 1
+WHERE w1.temperature > w2.temperature;
+```
+Edge Cases: Uses DATEDIFF = 1 rather than LAG() in case calendar dates have gaps.
+===
+QUESTION: Consecutive Numbers Appearing at Least Three Times in a Row (LAG and LEAD Window Functions)
+Table: Logs (id int, num int)
+Find all numbers that appear at least three times consecutively.
+APPROACH: Use LAG(num, 1) and LEAD(num, 1) ordered by id and select DISTINCT num where prev = num AND num = next.
+```sql
+WITH Windowed AS (
+    SELECT
+        num,
+        LAG(num, 1) OVER (ORDER BY id) AS prev_num,
+        LEAD(num, 1) OVER (ORDER BY id) AS next_num
+    FROM Logs
+)
+SELECT DISTINCT
+    num AS ConsecutiveNums
+FROM Windowed
+WHERE num = prev_num
+  AND num = next_num;
+```
+Edge Cases: DISTINCT prevents duplicate output if a number appears 4+ times consecutively.
+===
+QUESTION: Confirmation Rate / Percentage Conditional Aggregation with NULL Safety
+Table: Signups (user_id int, time_stamp datetime)
+Table: Confirmations (user_id int, time_stamp datetime, action ENUM('confirmed', 'timeout'))
+Find the confirmation rate of each user rounded to 2 decimal places (0.00 if no requests).
+APPROACH: LEFT JOIN Signups to Confirmations and compute ROUND(COALESCE(AVG(CASE WHEN action = 'confirmed' THEN 1.0 ELSE 0.0 END), 0), 2).
+```sql
+SELECT
+    s.user_id,
+    ROUND(
+        COALESCE(AVG(CASE WHEN c.action = 'confirmed' THEN 1.0 ELSE 0.0 END), 0),
+        2
+    ) AS confirmation_rate
+FROM Signups s
+LEFT JOIN Confirmations c
+    ON s.user_id = c.user_id
+GROUP BY s.user_id;
+```
+Edge Cases: LEFT JOIN + COALESCE ensures users with 0 confirmation rows get 0.00 instead of NULL.
+===
+QUESTION: Restaurant Growth / 7-Day Moving Average & Running Total (Window Frame ROWS BETWEEN)
+Table: Customer (customer_id int, name varchar, visited_on date, amount int)
+Compute the 7-day moving total and average amount paid by customers per day starting from the 7th day.
+APPROACH: Aggregate daily totals first in a CTE, then compute 7-day window SUM and AVG using ROWS BETWEEN 6 PRECEDING AND CURRENT ROW.
+```sql
+WITH DailyTotals AS (
+    SELECT
+        visited_on,
+        SUM(amount) AS daily_amount
+    FROM Customer
+    GROUP BY visited_on
+),
+MovingWindow AS (
+    SELECT
+        visited_on,
+        SUM(daily_amount) OVER (
+            ORDER BY visited_on
+            ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+        ) AS amount,
+        ROUND(
+            AVG(daily_amount * 1.0) OVER (
+                ORDER BY visited_on
+                ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+            ),
+            2
+        ) AS average_amount,
+        ROW_NUMBER() OVER (ORDER BY visited_on) AS day_num
+    FROM DailyTotals
+)
+SELECT
+    visited_on,
+    amount,
+    average_amount
+FROM MovingWindow
+WHERE day_num >= 7
+ORDER BY visited_on;
+```
+Edge Cases: Pre-aggregating by visited_on avoids wrong row counts when multiple customers visit on the same day.
+===
+QUESTION: Monthly Transactions I (Conditional COUNT and SUM by Month and Country)
+Table: Transactions (id int, country varchar, state enum('approved', 'declined'), amount int, trans_date date)
+Find for each month and country: total transactions, approved transactions, total amount, and approved amount.
+APPROACH: Group by YYYY-MM and country using SUM(CASE WHEN state = 'approved' ...) for conditional counts and sums.
+```sql
+SELECT
+    SUBSTR(CAST(trans_date AS CHAR), 1, 7) AS month,
+    country,
+    COUNT(*) AS trans_count,
+    SUM(CASE WHEN state = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+    SUM(amount) AS trans_total_amount,
+    SUM(CASE WHEN state = 'approved' THEN amount ELSE 0 END) AS approved_total_amount
+FROM Transactions
+GROUP BY
+    SUBSTR(CAST(trans_date AS CHAR), 1, 7),
+    country;
+```
+Edge Cases: GROUP BY includes country even when country is NULL.
+===
+QUESTION: Tree Node Classification (Root, Inner, Leaf)
+Table: Tree (id int, p_id int)
+Each node in the tree can be 'Root' (p_id IS NULL), 'Inner' (has parent and children), or 'Leaf' (has parent, no children).
+APPROACH: Use CASE WHEN p_id IS NULL THEN 'Root' WHEN id IN (SELECT p_id FROM Tree WHERE p_id IS NOT NULL) THEN 'Inner' ELSE 'Leaf' END.
+```sql
+SELECT
+    id,
+    CASE
+        WHEN p_id IS NULL THEN 'Root'
+        WHEN id IN (SELECT p_id FROM Tree WHERE p_id IS NOT NULL) THEN 'Inner'
+        ELSE 'Leaf'
+    END AS type
+FROM Tree;
+```
+Edge Cases: Filtering WHERE p_id IS NOT NULL inside the IN subquery prevents NULL comparison traps.

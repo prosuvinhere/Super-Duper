@@ -1,0 +1,393 @@
+# DSA (Data Structures & Algorithms) Reference Q&A Bank
+# Add your own sample questions and answers below separated by "===" on its own line.
+# The copilot automatically indexes every block via BM25 (<2ms) and feeds the closest
+# solved examples to the LLM when solving screen or clipboard questions.
+
+===
+QUESTION: Two Sum
+Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.
+APPROACH: Single-pass Hash Map storing {value: index} and checking if (target - x) was already seen.
+```python
+class Solution:
+    def twoSum(self, nums: list[int], target: int) -> list[int]:
+        seen = {}
+        for i, x in enumerate(nums):
+            if target - x in seen:
+                return [seen[target - x], i]
+            seen[x] = i
+        return []
+```
+Complexity: Time: O(n) | Space: O(n)
+===
+QUESTION: Palindrome Number / Check if Integer or String is Palindrome
+Given an integer x, return true if x is a palindrome, and false otherwise. Negative numbers are not palindromes.
+APPROACH: Reverse half of the integer mathematically (or compare string s == s[::-1]) to check symmetry.
+```python
+class Solution:
+    def isPalindrome(self, x: int) -> bool:
+        if x < 0 or (x % 10 == 0 and x != 0):
+            return False
+        rev = 0
+        while x > rev:
+            rev = rev * 10 + x % 10
+            x //= 10
+        return x == rev or x == rev // 10
+```
+Complexity: Time: O(log10(n)) | Space: O(1)
+===
+QUESTION: Check Prime Number / Fibonacci / Factorial / GCD (Basic Math & Iteration)
+Write a function to check if a number n is prime, or compute the nth Fibonacci number iteratively in O(1) space.
+APPROACH: Check divisibility up to isqrt(n) skipping even numbers; for Fibonacci, iterate with two variables (a, b).
+```python
+import math
+
+def is_prime(n: int) -> bool:
+    if n < 2:
+        return False
+    if n in (2, 3):
+        return True
+    if n % 2 == 0 or n % 3 == 0:
+        return False
+    for d in range(5, math.isqrt(n) + 1, 6):
+        if n % d == 0 or n % (d + 2) == 0:
+            return False
+    return True
+
+def fibonacci(n: int) -> int:
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return a
+```
+Complexity: Time: O(sqrt(n)) for prime, O(n) for Fibonacci | Space: O(1)
+===
+QUESTION: Longest Substring Without Repeating Characters
+Given a string s, find the length of the longest substring without duplicate/repeating characters.
+APPROACH: Sliding window with a dictionary storing the last seen index of each character; advance left pointer past duplicates.
+```python
+class Solution:
+    def lengthOfLongestSubstring(self, s: str) -> int:
+        last_seen = {}
+        left = 0
+        ans = 0
+        for right, ch in enumerate(s):
+            if ch in last_seen and last_seen[ch] >= left:
+                left = last_seen[ch] + 1
+            last_seen[ch] = right
+            ans = max(ans, right - left + 1)
+        return ans
+```
+Complexity: Time: O(n) | Space: O(min(n, charset))
+===
+QUESTION: Subarray Sum Equals K / Continuous Subarray Sum
+Given an array of integers nums and an integer k, return the total number of subarrays whose sum equals to k.
+APPROACH: Prefix sum with a frequency map initialized to {0: 1}; at each element add count of (curr_sum - k).
+```python
+class Solution:
+    def subarraySum(self, nums: list[int], k: int) -> int:
+        prefix_counts = {0: 1}
+        curr = 0
+        ans = 0
+        for x in nums:
+            curr += x
+            ans += prefix_counts.get(curr - k, 0)
+            prefix_counts[curr] = prefix_counts.get(curr, 0) + 1
+        return ans
+```
+Complexity: Time: O(n) | Space: O(n)
+===
+QUESTION: Maximum Subarray (Kadane's Algorithm)
+Given an integer array nums, find the subarray with the largest sum, and return its sum.
+APPROACH: Kadane's algorithm—either extend the previous subarray or start fresh at the current number.
+```python
+class Solution:
+    def maxSubArray(self, nums: list[int]) -> int:
+        curr = best = nums[0]
+        for x in nums[1:]:
+            curr = max(x, curr + x)
+            best = max(best, curr)
+        return best
+```
+Complexity: Time: O(n) | Space: O(1)
+===
+QUESTION: Best Time to Buy and Sell Stock
+You are given an array prices where prices[i] is the price of a given stock on the ith day. Maximize profit by choosing a single day to buy and a future day to sell.
+APPROACH: Track the minimum price seen so far and update the maximum profit at each day in a single pass.
+```python
+class Solution:
+    def maxProfit(self, prices: list[int]) -> int:
+        min_price = float("inf")
+        max_profit = 0
+        for p in prices:
+            if p < min_price:
+                min_price = p
+            elif p - min_price > max_profit:
+                max_profit = p - min_price
+        return max_profit
+```
+Complexity: Time: O(n) | Space: O(1)
+===
+QUESTION: Product of Array Except Self
+Given an integer array nums, return an array answer such that answer[i] is equal to the product of all the elements of nums except nums[i], without using division.
+APPROACH: Two passes—accumulate prefix products left-to-right into the result array, then multiply by running suffix product right-to-left.
+```python
+class Solution:
+    def productExceptSelf(self, nums: list[int]) -> list[int]:
+        n = len(nums)
+        res = [1] * n
+        prefix = 1
+        for i in range(n):
+            res[i] = prefix
+            prefix *= nums[i]
+        suffix = 1
+        for i in range(n - 1, -1, -1):
+            res[i] *= suffix
+            suffix *= nums[i]
+        return res
+```
+Complexity: Time: O(n) | Space: O(1) extra
+===
+QUESTION: 3Sum / Three Sum & Container With Most Water (Two Pointers)
+Given an integer array nums, return all unique triplets [nums[i], nums[j], nums[k]] such that i != j != k and nums[i] + nums[j] + nums[k] == 0.
+APPROACH: Sort the array, fix the first element while skipping duplicates, and use converging left/right pointers for the remaining pair.
+```python
+class Solution:
+    def threeSum(self, nums: list[int]) -> list[list[int]]:
+        nums.sort()
+        res = []
+        n = len(nums)
+        for i in range(n - 2):
+            if nums[i] > 0:
+                break
+            if i > 0 and nums[i] == nums[i - 1]:
+                continue
+            l, r = i + 1, n - 1
+            while l < r:
+                s = nums[i] + nums[l] + nums[r]
+                if s < 0:
+                    l += 1
+                elif s > 0:
+                    r -= 1
+                else:
+                    res.append([nums[i], nums[l], nums[r]])
+                    l += 1
+                    r -= 1
+                    while l < r and nums[l] == nums[l - 1]:
+                        l += 1
+        return res
+```
+Complexity: Time: O(n^2) | Space: O(1) excluding output
+===
+QUESTION: Valid Parentheses & Daily Temperatures / Next Greater Element (Monotonic Stack)
+Given an array of integers temperatures, return an array answer such that answer[i] is the number of days you have to wait after the ith day to get a warmer temperature.
+APPROACH: Maintain a monotonic decreasing stack of indices; pop and resolve waiting days whenever a warmer temperature arrives.
+```python
+class Solution:
+    def dailyTemperatures(self, temperatures: list[int]) -> list[int]:
+        ans = [0] * len(temperatures)
+        stack = []  # stores indices
+        for i, t in enumerate(temperatures):
+            while stack and temperatures[stack[-1]] < t:
+                prev = stack.pop()
+                ans[prev] = i - prev
+            stack.append(i)
+        return ans
+```
+Complexity: Time: O(n) | Space: O(n)
+===
+QUESTION: Binary Search & Search in Rotated Sorted Array
+There is an integer array nums sorted in ascending order (with distinct values) that is possibly rotated at an unknown pivot. Given target, return its index or -1 in O(log n) time.
+APPROACH: At each midpoint, one half (left..mid or mid..right) is guaranteed to be sorted; check if target lies within the sorted half.
+```python
+class Solution:
+    def search(self, nums: list[int], target: int) -> int:
+        left, right = 0, len(nums) - 1
+        while left <= right:
+            mid = (left + right) // 2
+            if nums[mid] == target:
+                return mid
+            if nums[left] <= nums[mid]:
+                if nums[left] <= target < nums[mid]:
+                    right = mid - 1
+                else:
+                    left = mid + 1
+            else:
+                if nums[mid] < target <= nums[right]:
+                    left = mid + 1
+                else:
+                    right = mid - 1
+        return -1
+```
+Complexity: Time: O(log n) | Space: O(1)
+===
+QUESTION: Merge Intervals
+Given an array of intervals where intervals[i] = [start_i, end_i], merge all overlapping intervals.
+APPROACH: Sort intervals by start time and merge into the previous interval whenever current.start <= previous.end.
+```python
+class Solution:
+    def merge(self, intervals: list[list[int]]) -> list[list[int]]:
+        intervals.sort(key=lambda x: x[0])
+        merged = [intervals[0]]
+        for start, end in intervals[1:]:
+            if start <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        return merged
+```
+Complexity: Time: O(n log n) | Space: O(n)
+===
+QUESTION: Reverse Linked List & Linked List Cycle Detection
+Given the head of a singly linked list, reverse the list and return the reversed list.
+APPROACH: Iteratively rewire next pointers using prev and curr pointers in O(1) space.
+```python
+class Solution:
+    def reverseList(self, head):
+        prev, curr = None, head
+        while curr:
+            nxt = curr.next
+            curr.next = prev
+            prev = curr
+            curr = nxt
+        return prev
+```
+Complexity: Time: O(n) | Space: O(1)
+===
+QUESTION: Binary Tree Level Order Traversal & Lowest Common Ancestor (BFS / DFS)
+Given the root of a binary tree, return the level order traversal of its nodes' values (from left to right, level by level).
+APPROACH: Breadth-First Search using collections.deque processing len(queue) nodes per level.
+```python
+from collections import deque
+
+class Solution:
+    def levelOrder(self, root) -> list[list[int]]:
+        if not root:
+            return []
+        res = []
+        q = deque([root])
+        while q:
+            level = []
+            for _ in range(len(q)):
+                node = q.popleft()
+                level.append(node.val)
+                if node.left:
+                    q.append(node.left)
+                if node.right:
+                    q.append(node.right)
+            res.append(level)
+        return res
+```
+Complexity: Time: O(n) | Space: O(n)
+===
+QUESTION: Number of Islands & Rotting Oranges (Grid BFS / DFS)
+Given an m x n 2D binary grid which represents a map of '1's (land) and '0's (water), return the number of islands.
+APPROACH: Iterate over cells; when a '1' is found, increment count and sink connected land cells to '0' via DFS/BFS.
+```python
+from collections import deque
+
+class Solution:
+    def numIslands(self, grid: list[list[str]]) -> int:
+        if not grid:
+            return 0
+        rows, cols = len(grid), len(grid[0])
+        islands = 0
+        for r in range(rows):
+            for c in range(cols):
+                if grid[r][c] == "1":
+                    islands += 1
+                    grid[r][c] = "0"
+                    q = deque([(r, c)])
+                    while q:
+                        cr, cc = q.popleft()
+                        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                            nr, nc = cr + dr, cc + dc
+                            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == "1":
+                                grid[nr][nc] = "0"
+                                q.append((nr, nc))
+        return islands
+```
+Complexity: Time: O(R * C) | Space: O(min(R, C))
+===
+QUESTION: Course Schedule / Topological Sort (Cycle Detection in Directed Graph)
+There are numCourses courses labeled 0 to numCourses - 1 and prerequisites[i] = [a, b] meaning you must take b before a. Return true if you can finish all courses.
+APPROACH: Kahn's BFS topological sort—compute in-degrees, enqueue 0-in-degree nodes, and check if visited count equals numCourses.
+```python
+from collections import deque
+
+class Solution:
+    def canFinish(self, numCourses: int, prerequisites: list[list[int]]) -> bool:
+        adj = [[] for _ in range(numCourses)]
+        indeg = [0] * numCourses
+        for course, pre in prerequisites:
+            adj[pre].append(course)
+            indeg[course] += 1
+        q = deque(i for i in range(numCourses) if indeg[i] == 0)
+        taken = 0
+        while q:
+            u = q.popleft()
+            taken += 1
+            for v in adj[u]:
+                indeg[v] -= 1
+                if indeg[v] == 0:
+                    q.append(v)
+        return taken == numCourses
+```
+Complexity: Time: O(V + E) | Space: O(V + E)
+===
+QUESTION: Top K Frequent Elements / Kth Largest Element in an Array (Heap / Bucket Sort)
+Given an integer array nums and an integer k, return the k most frequent elements.
+APPROACH: Count frequencies with collections.Counter and use bucket sort (or heapq.nlargest) in O(n) time.
+```python
+from collections import Counter
+
+class Solution:
+    def topKFrequent(self, nums: list[int], k: int) -> list[int]:
+        counts = Counter(nums)
+        return [item for item, _ in counts.most_common(k)]
+```
+Complexity: Time: O(n log k) | Space: O(n)
+===
+QUESTION: Coin Change / House Robber / Climbing Stairs / Longest Common Subsequence (Dynamic Programming)
+You are given an integer array coins and an integer amount. Return the fewest number of coins that you need to make up that amount, or -1 if impossible.
+APPROACH: Bottom-up 1D DP where dp[a] stores the minimum coins needed for amount a, initialized with amount + 1.
+```python
+class Solution:
+    def coinChange(self, coins: list[int], amount: int) -> int:
+        dp = [amount + 1] * (amount + 1)
+        dp[0] = 0
+        for a in range(1, amount + 1):
+            for c in coins:
+                if a >= c and dp[a - c] + 1 < dp[a]:
+                    dp[a] = dp[a - c] + 1
+        return dp[amount] if dp[amount] <= amount else -1
+```
+Complexity: Time: O(amount * len(coins)) | Space: O(amount)
+===
+QUESTION: Median of Two Sorted Arrays
+Given two sorted arrays nums1 and nums2 of size m and n respectively, return the median of the two sorted arrays in O(log (m+n)) time.
+APPROACH: Binary search the partition cut on the smaller array so left_max <= right_min across both arrays.
+```python
+class Solution:
+    def findMedianSortedArrays(self, nums1: list[int], nums2: list[int]) -> float:
+        if len(nums1) > len(nums2):
+            nums1, nums2 = nums2, nums1
+        m, n = len(nums1), len(nums2)
+        lo, hi, half = 0, m, (m + n + 1) // 2
+        while lo <= hi:
+            i = (lo + hi) // 2
+            j = half - i
+            l1 = nums1[i - 1] if i > 0 else float("-inf")
+            r1 = nums1[i] if i < m else float("inf")
+            l2 = nums2[j - 1] if j > 0 else float("-inf")
+            r2 = nums2[j] if j < n else float("inf")
+            if l1 <= r2 and l2 <= r1:
+                if (m + n) % 2 == 1:
+                    return float(max(l1, l2))
+                return (max(l1, l2) + min(r1, r2)) / 2.0
+            if l1 > r2:
+                hi = i - 1
+            else:
+                lo = i + 1
+        return 0.0
+```
+Complexity: Time: O(log(min(m, n))) | Space: O(1)

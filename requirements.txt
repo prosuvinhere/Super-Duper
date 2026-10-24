@@ -1,0 +1,25 @@
+# Audio Capture & Real-Time Transcription (CPU int8 + VAD)
+faster-whisper>=1.0.3
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# Lightweight Local RAG & Document Parsing
+rank-bm25>=0.2.2
+pypdf>=4.1.0
+
+# Screen Capture & Zero-VLM OCR
+mss>=9.0.1
+Pillow>=10.2.0
+rapidocr-onnxruntime>=1.3.16
+pytesseract>=0.3.10
+
+# Stealth Desktop Overlay & Global Hotkeys
+PyQt6>=6.6.1
+pynput>=1.7.6
+
+# HTTP Streaming & Memory Monitoring
+requests>=2.31.0
+psutil>=5.9.8
+
+# Testing
+pytest>=8.0.0
