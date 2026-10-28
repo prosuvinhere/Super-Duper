@@ -345,6 +345,36 @@ class TestInterviewCopilot8GB(unittest.TestCase):
         self.assertIn("answers ANY question", calls[0]["payload"]["messages"][0]["content"])
         self.assertIn("CAP theorem", calls[0]["payload"]["messages"][1]["content"])
 
+    def test_10_windows_rapidocr_layout_reconstruction(self) -> None:
+        """
+        Verify Windows RapidOCR two-column layout reconstruction separates left problem
+        statements from right code editor lines and strips top tab bar & bottom Windows taskbar.
+        """
+        mock_rapidocr_result = [
+            # Top browser tab bar (y=10 on 1080p screen -> y_norm=0.009 < 0.032 -> filtered out)
+            [[[100, 10], [400, 10], [400, 28], [100, 28]], "LeetCode - Two Sum - Chrome", 0.99],
+            # Left column line 1 (x=80..500, y=150)
+            [[[80, 150], [500, 150], [500, 175], [80, 175]], "1. Two Sum", 0.99],
+            # Right column line 1 (x=1100..1500, y=150) — would interleave without column separation!
+            [[[1100, 150], [1500, 150], [1500, 175], [1100, 175]], "class Solution:", 0.99],
+            # Left column line 2 (x=80..700, y=220)
+            [[[80, 220], [700, 220], [700, 245], [80, 245]], "Given an array of integers nums and target.", 0.99],
+            # Right column line 2 (x=1120..1650, y=220)
+            [[[1120, 220], [1650, 220], [1650, 245], [1120, 245]], "def twoSum(self, nums: List[int], target: int):", 0.99],
+            # Bottom Windows taskbar (y=1050 on 1080p -> y_norm=0.972 > 0.952 -> filtered out)
+            [[[50, 1050], [300, 1050], [300, 1075], [50, 1075]], "Type here to search", 0.99],
+            # Reference point to establish 1920x1080 bounds when no image file is read
+            [[[1900, 1070], [1915, 1070], [1915, 1079], [1900, 1079]], "12", 0.99],
+        ]
+        reconstructed = OCRCapture._reconstruct_layout_from_rapidocr(
+            mock_rapidocr_result,
+            Path("/nonexistent_1920x1080.png"),
+        )
+        self.assertNotIn("Type here to search", reconstructed)
+        self.assertNotIn("LeetCode - Two Sum - Chrome", reconstructed)
+        # Left column must appear completely before right column
+        self.assertLess(reconstructed.index("Given an array"), reconstructed.index("class Solution:"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

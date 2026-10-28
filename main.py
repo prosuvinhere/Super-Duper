@@ -66,20 +66,47 @@ def get_process_memory_mb() -> float:
 
 def read_clipboard_text() -> str:
     """
-    Cross-platform clipboard text reader supporting macOS (`pbpaste`),
-    Windows (`PyQt6` / PowerShell `Get-Clipboard` / `tkinter`), and Linux (`xclip` / `xsel`).
+    Cross-platform clipboard text reader supporting Windows (Win32 `CF_UNICODETEXT` + PowerShell),
+    macOS (`pbpaste`), PyQt6, and Linux (`xclip` / `xsel`).
+    Safe to call from background hotkey worker threads on Windows and macOS.
     """
-    # 1. Try active PyQt6 QApplication clipboard first (works on macOS, Windows, Linux)
-    try:
-        from PyQt6.QtWidgets import QApplication  # type: ignore
+    # 1. Fast native Win32 API clipboard reader (thread-safe on Windows, <1ms, zero subprocess overhead)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
 
-        app = QApplication.instance()
-        if app is not None:
-            txt = app.clipboard().text()
-            if txt and txt.strip():
-                return txt.strip()
-    except Exception:
-        pass
+            user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            CF_UNICODETEXT = 13
+
+            user32.OpenClipboard.argtypes = [wintypes.HWND]
+            user32.OpenClipboard.restype = wintypes.BOOL
+            user32.GetClipboardData.argtypes = [wintypes.UINT]
+            user32.GetClipboardData.restype = wintypes.HANDLE
+            user32.CloseClipboard.argtypes = []
+            user32.CloseClipboard.restype = wintypes.BOOL
+            kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+            kernel32.GlobalLock.restype = wintypes.LPVOID
+            kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+            kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+            if user32.OpenClipboard(None):
+                try:
+                    h_data = user32.GetClipboardData(CF_UNICODETEXT)
+                    if h_data:
+                        ptr = kernel32.GlobalLock(h_data)
+                        if ptr:
+                            try:
+                                text = ctypes.wstring_at(ptr)
+                                if text and text.strip():
+                                    return text.strip()
+                            finally:
+                                kernel32.GlobalUnlock(h_data)
+                finally:
+                    user32.CloseClipboard()
+        except Exception:
+            pass
 
     # 2. Platform-native CLI clipboard tools
     if sys.platform == "darwin":
@@ -112,16 +139,15 @@ def read_clipboard_text() -> str:
             except Exception:
                 continue
 
-    # 3. Tkinter fallback
+    # 3. Try active PyQt6 QApplication clipboard
     try:
-        import tkinter as tk
+        from PyQt6.QtWidgets import QApplication  # type: ignore
 
-        r = tk.Tk()
-        r.withdraw()
-        txt = r.clipboard_get()
-        r.destroy()
-        if txt and str(txt).strip():
-            return str(txt).strip()
+        app = QApplication.instance()
+        if app is not None:
+            txt = app.clipboard().text()
+            if txt and txt.strip():
+                return txt.strip()
     except Exception:
         pass
 
@@ -304,10 +330,13 @@ class InterviewCopilotApp:
         Handler for `Ctrl+Shift+G` ('Answer Any'):
         Captures the active screen via OCR and answers ANY question in front of the user
         (MCQ, conceptual/theory, system design, behavioral/interview, aptitude, or code/SQL).
+        Falls back to clipboard text if screen OCR is empty.
         """
         self.overlay.set_status("Capturing question from screen via OCR...")
         screen_text = self._capture_screen_text_cleanly()
         cleaned_text = self.ocr.clean_coding_ocr_text(screen_text)
+        if not cleaned_text:
+            cleaned_text = self.ocr.clean_coding_ocr_text(read_clipboard_text())
         if not cleaned_text:
             def _empty_stream() -> Iterator[str]:
                 yield "No question text detected on screen. Please ensure the question is visible."

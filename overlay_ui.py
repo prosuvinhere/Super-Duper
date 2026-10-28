@@ -100,7 +100,7 @@ def _get_default_mono_font() -> str:
     return "DejaVu Sans Mono"
 
 
-def _apply_windows_stealth_flags(hwnd: int) -> None:
+def _apply_windows_stealth_flags(hwnd: int) -> bool:
     """
     Apply Windows 10/11 native stealth flags via Win32 user32 APIs:
     1. `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE=0x00000011)`:
@@ -110,18 +110,17 @@ def _apply_windows_stealth_flags(hwnd: int) -> None:
        Hides the overlay from the Windows Taskbar and Alt+Tab switcher and prevents focus stealing.
     """
     if sys.platform != "win32" or not hwnd:
-        return
+        return False
     try:
         import ctypes
+        from ctypes import wintypes
 
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
         WDA_MONITOR = 0x00000001
         WDA_EXCLUDEFROMCAPTURE = 0x00000011
 
-        # Hide window from screen capture / screen sharing
-        ok = user32.SetWindowDisplayAffinity(ctypes.wintypes.HWND(hwnd), WDA_EXCLUDEFROMCAPTURE)
-        if not ok:
-            user32.SetWindowDisplayAffinity(ctypes.wintypes.HWND(hwnd), WDA_MONITOR)
+        user32.SetWindowDisplayAffinity.argtypes = [wintypes.HWND, wintypes.DWORD]
+        user32.SetWindowDisplayAffinity.restype = wintypes.BOOL
 
         # Hide from Windows Taskbar & Alt+Tab and prevent focus activation
         GWL_EXSTYLE = -20
@@ -129,16 +128,29 @@ def _apply_windows_stealth_flags(hwnd: int) -> None:
         WS_EX_NOACTIVATE = 0x08000000
         get_long = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
         set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
-        ex_style = get_long(hwnd, GWL_EXSTYLE)
-        set_long(hwnd, GWL_EXSTYLE, ex_style | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+        get_long.argtypes = [wintypes.HWND, ctypes.c_int]
+        get_long.restype = ctypes.c_ssize_t
+        set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        set_long.restype = ctypes.c_ssize_t
+
+        h_wnd = wintypes.HWND(hwnd)
+        ex_style = get_long(h_wnd, GWL_EXSTYLE)
+        set_long(h_wnd, GWL_EXSTYLE, ex_style | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+
+        # Hide window from screen capture / screen sharing
+        ok = bool(user32.SetWindowDisplayAffinity(h_wnd, WDA_EXCLUDEFROMCAPTURE))
+        if not ok:
+            user32.SetWindowDisplayAffinity(h_wnd, WDA_MONITOR)
+        return ok
     except Exception:
-        pass
+        return False
 
 
 class GlobalHotkeyManager:
     """
-    System-wide global hotkey listener using `pynput` so hotkeys (`Ctrl+Shift+S`,
-    `Ctrl+Shift+A`, `Ctrl+Shift+V`, `Ctrl+Shift+C`) trigger actions without ever focusing the overlay window.
+    System-wide global hotkey listener using `pynput` (plus native Win32 `RegisterHotKey`
+    on Windows) so hotkeys (`Ctrl+Shift+G`, `Ctrl+Shift+S`, `Ctrl+Shift+A`, `Ctrl+Shift+V`,
+    `Ctrl+Shift+C`) trigger actions reliably without ever focusing the overlay window.
     """
 
     def __init__(
@@ -157,34 +169,113 @@ class GlobalHotkeyManager:
         self.on_answer_general = on_answer_general
         self.on_quit = on_quit
         self._listener: Optional[object] = None
+        self._win32_running = False
+        self._win32_thread: Optional[threading.Thread] = None
+        self._last_fire_ts: float = 0.0
+
+    def _debounced(self, fn: Optional[Callable[[], None]]) -> Callable[[], None]:
+        def _wrapped() -> None:
+            if fn is None:
+                return
+            import time
+
+            now = time.monotonic()
+            if now - self._last_fire_ts < 0.28:
+                return
+            self._last_fire_ts = now
+            fn()
+
+        return _wrapped
 
     def get_hotkey_map(self) -> Dict[str, Callable[[], None]]:
         mapping: Dict[str, Callable[[], None]] = {
-            HOTKEY_ANSWER: self.on_trigger_answer,
-            HOTKEY_SCREENSHOT: self.on_screenshot_code,
-            HOTKEY_CLEAR: self.on_clear_screen,
+            HOTKEY_ANSWER: self._debounced(self.on_trigger_answer),
+            HOTKEY_SCREENSHOT: self._debounced(self.on_screenshot_code),
+            HOTKEY_CLEAR: self._debounced(self.on_clear_screen),
         }
         if self.on_solve_clipboard is not None:
-            mapping[HOTKEY_CLIPBOARD] = self.on_solve_clipboard
+            mapping[HOTKEY_CLIPBOARD] = self._debounced(self.on_solve_clipboard)
         if self.on_answer_general is not None:
-            mapping[HOTKEY_GENERAL_QUESTION] = self.on_answer_general
+            mapping[HOTKEY_GENERAL_QUESTION] = self._debounced(self.on_answer_general)
         if self.on_quit is not None:
-            mapping[HOTKEY_QUIT] = self.on_quit
+            mapping[HOTKEY_QUIT] = self._debounced(self.on_quit)
         return mapping
 
-    def start(self) -> bool:
-        if pynput_keyboard is None:
-            return False
+    def _run_win32_hotkey_loop(self) -> None:
+        """Native Windows `RegisterHotKey` loop so hotkeys work even when Chrome/Edge/Zoom blocks WH_KEYBOARD_LL."""
+        if sys.platform != "win32":
+            return
         try:
-            self._listener = pynput_keyboard.GlobalHotKeys(self.get_hotkey_map())
-            self._listener.daemon = True  # type: ignore[attr-defined]
-            self._listener.start()  # type: ignore[attr-defined]
-            return True
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+            MOD_CONTROL = 0x0002
+            MOD_SHIFT = 0x0004
+            MOD_NOREPEAT = 0x4000
+            WM_HOTKEY = 0x0312
+            mods = MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT
+
+            vk_bindings: Dict[int, Callable[[], None]] = {
+                1: (0x41, self._debounced(self.on_trigger_answer)),      # 'A'
+                2: (0x53, self._debounced(self.on_screenshot_code)),     # 'S'
+                3: (0x43, self._debounced(self.on_clear_screen)),        # 'C'
+            }
+            if self.on_solve_clipboard is not None:
+                vk_bindings[4] = (0x56, self._debounced(self.on_solve_clipboard))   # 'V'
+            if self.on_answer_general is not None:
+                vk_bindings[5] = (0x47, self._debounced(self.on_answer_general))    # 'G'
+            if self.on_quit is not None:
+                vk_bindings[6] = (0x51, self._debounced(self.on_quit))              # 'Q'
+
+            registered_ids = []
+            for hk_id, (vk, _cb) in vk_bindings.items():
+                if user32.RegisterHotKey(None, hk_id, mods, vk):
+                    registered_ids.append(hk_id)
+
+            msg = wintypes.MSG()
+            while self._win32_running:
+                if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                    if msg.message == WM_HOTKEY and int(msg.wParam) in vk_bindings:
+                        _vk, cb = vk_bindings[int(msg.wParam)]
+                        try:
+                            cb()
+                        except Exception:
+                            pass
+                else:
+                    import time
+
+                    time.sleep(0.03)
+
+            for hk_id in registered_ids:
+                user32.UnregisterHotKey(None, hk_id)
         except Exception:
-            self._listener = None
-            return False
+            pass
+
+    def start(self) -> bool:
+        started = False
+        if sys.platform == "win32" and not self._win32_running:
+            self._win32_running = True
+            self._win32_thread = threading.Thread(
+                target=self._run_win32_hotkey_loop,
+                name="Win32NativeHotkeys",
+                daemon=True,
+            )
+            self._win32_thread.start()
+            started = True
+
+        if pynput_keyboard is not None:
+            try:
+                self._listener = pynput_keyboard.GlobalHotKeys(self.get_hotkey_map())
+                self._listener.daemon = True  # type: ignore[attr-defined]
+                self._listener.start()  # type: ignore[attr-defined]
+                started = True
+            except Exception:
+                self._listener = None
+        return started
 
     def stop(self) -> None:
+        self._win32_running = False
         if self._listener is not None:
             try:
                 self._listener.stop()  # type: ignore[attr-defined]
@@ -314,14 +405,14 @@ class StealthOverlayUI:
                 self._ui_queue.put(("clear", ""))
                 if header:
                     self.append_token(f"{header}\n{'─' * 48}\n")
-                self.set_status("Streaming from Ollama (qwen2.5:3b | ctx=2048)...")
+                self.set_status("Generating solution & streaming answer...")
                 try:
                     for token in token_iterator:
                         self.append_token(token)
                     self.set_status("Ready | Answer Any: Ctrl+Shift+G | DSA: Ctrl+Shift+S | SQL: Ctrl+Shift+A")
                 except Exception as exc:
                     self.append_token(f"\n[Error]: {exc}")
-                    self.set_status("Error during generation | Check Ollama daemon")
+                    self.set_status("Error during generation | Check API key in .env or Ollama")
                 finally:
                     gc.collect()
 
@@ -383,12 +474,15 @@ class StealthOverlayUI:
 
         # Critical stealth flags: Always-On-Top, Frameless, Does Not Accept Focus.
         # Note: Do NOT set Qt.WindowType.Tool on macOS, as Tool windows set hidesOnDeactivate=YES
-        # and disappear when switching apps or browser tabs.
-        window.setWindowFlags(
+        # and disappear when switching apps or browser tabs. On Windows, Tool hides the taskbar icon.
+        win_flags = (
             Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowDoesNotAcceptFocus
         )
+        if sys.platform == "win32":
+            win_flags |= Qt.WindowType.Tool
+        window.setWindowFlags(win_flags)
         window.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         window.setWindowOpacity(self.opacity)
@@ -441,6 +535,8 @@ class StealthOverlayUI:
             btn_row.addWidget(btn)
         layout.addLayout(btn_row)
 
+        win32_hw_stealth = [False]
+
         def _poll_queue() -> None:
             try:
                 while not self._ui_queue.empty():
@@ -461,7 +557,12 @@ class StealthOverlayUI:
                     elif cmd == "transcript":
                         transcript_label.setText(str(payload))
                     elif cmd == "stealth":
+                        if sys.platform == "win32" and win32_hw_stealth[0]:
+                            # WDA_EXCLUDEFROMCAPTURE already hides the window from screenshots in DWM
+                            continue
                         window.setWindowOpacity(0.0 if payload == "1" else self.opacity)
+                        if sys.platform == "win32" and payload == "0":
+                            win32_hw_stealth[0] = _apply_windows_stealth_flags(int(window.winId()))
             except KeyboardInterrupt:
                 app.quit()
             except BaseException:
@@ -510,7 +611,7 @@ class StealthOverlayUI:
             except Exception:
                 pass
         elif sys.platform == "win32":
-            _apply_windows_stealth_flags(int(window.winId()))
+            win32_hw_stealth[0] = _apply_windows_stealth_flags(int(window.winId()))
 
         app.exec()
 
